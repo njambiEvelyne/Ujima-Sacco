@@ -6,6 +6,7 @@ const memberLinks = [
   { to: '/dashboard', icon: '🏠', label: 'Overview' },
   { to: '/dashboard/loans', icon: '💳', label: 'My Loans' },
   { to: '/dashboard/apply', icon: '📝', label: 'Apply for Loan' },
+  { to: '/dashboard/activity', icon: '🕓', label: 'My Activity' },
   { to: '/dashboard/profile', icon: '👤', label: 'My Profile' },
 ];
 
