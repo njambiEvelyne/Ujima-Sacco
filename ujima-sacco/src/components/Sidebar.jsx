@@ -13,6 +13,7 @@ const adminLinks = [
   { to: '/admin', icon: '📊', label: 'Overview' },
   { to: '/admin/loans', icon: '📋', label: 'Loan Applications' },
   { to: '/admin/members', icon: '👥', label: 'Members' },
+  { to: '/admin/activity', icon: '🕓', label: 'Activity Log' },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {

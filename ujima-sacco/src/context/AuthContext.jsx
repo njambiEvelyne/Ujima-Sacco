@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getSession, clearSession, setSession } from '../data/store';
+import { getSession, clearSession, setSession, addActivity } from '../data/store';
 
 const AuthContext = createContext(null);
 
@@ -19,6 +19,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    const session = getSession();
+    if (session) {
+      addActivity({
+        userId: session.id, userName: session.fullName, memberNumber: session.memberNumber,
+        role: session.role, type: 'logout', description: `${session.fullName} signed out`,
+      });
+    }
     clearSession();
     setUser(null);
   };

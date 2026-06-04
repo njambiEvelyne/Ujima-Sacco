@@ -2,9 +2,26 @@ import React from 'react';
 import { Link, Routes, Route } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
-import { getUserLoans, formatKES } from '../data/store';
+import { getUserLoans, getUserActivities, formatKES } from '../data/store';
 import ApplyLoan from './ApplyLoan';
 import UserProfile from './UserProfile';
+
+const activityMeta = {
+  login:         { icon: '🔐', color: '#dbeafe', label: 'Signed In' },
+  logout:        { icon: '🚪', color: '#f1f5f9', label: 'Signed Out' },
+  register:      { icon: '🌱', color: '#dcfce7', label: 'Joined' },
+  loan_apply:    { icon: '📝', color: '#fef3c7', label: 'Applied' },
+  loan_approved: { icon: '✅', color: '#dcfce7', label: 'Approved' },
+  loan_rejected: { icon: '❌', color: '#fee2e2', label: 'Rejected' },
+};
+
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' });
+}
 
 function Overview() {
   const { user } = useAuth();
@@ -80,6 +97,9 @@ function Overview() {
           </div>
         )}
       </div>
+
+      {/* Recent Activity */}
+      <ActivityFeed userId={user?.id} limit={5} />
     </div>
   );
 }
@@ -167,6 +187,83 @@ function MyLoans() {
   );
 }
 
+function ActivityFeed({ userId, limit }) {
+  const activities = getUserActivities(userId).slice(0, limit || 10);
+  if (activities.length === 0) return null;
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <h3 style={{ fontWeight: 700 }}>Recent Activity</h3>
+        <Link to="/dashboard/activity" className="btn btn-outline btn-sm">View All</Link>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {activities.map(a => {
+          const meta = activityMeta[a.type] || { icon: '📌', color: '#f1f5f9', label: a.type };
+          return (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', flexShrink: 0 }}>
+                {meta.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>{a.description}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>{meta.label}</div>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {timeAgo(a.timestamp)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MyActivity() {
+  const { user } = useAuth();
+  const activities = getUserActivities(user?.id);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div>
+        <h2 style={{ fontWeight: 700 }}>My Activity</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Your account history and actions</p>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {activities.length === 0 ? (
+          <div className="empty-state" style={{ padding: '3rem' }}>
+            <div className="icon">🕓</div>
+            <h3>No activity yet</h3>
+            <p>Your actions will be recorded here</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {activities.map((a, i) => {
+              const meta = activityMeta[a.type] || { icon: '📌', color: '#f1f5f9', label: a.type };
+              return (
+                <div key={a.id} style={{ display: 'flex', gap: '1rem', padding: '0.875rem 1.25rem', borderBottom: i < activities.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
+                    {meta.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{a.description}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                      {new Date(a.timestamp).toLocaleString('en-KE')}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', background: meta.color, borderRadius: 20, padding: '0.15rem 0.55rem', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {meta.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function UserDashboard() {
   return (
     <Routes>
@@ -174,6 +271,7 @@ export default function UserDashboard() {
       <Route path="/loans" element={<DashboardLayout title="My Loans"><MyLoans /></DashboardLayout>} />
       <Route path="/apply" element={<DashboardLayout title="Apply for Loan"><ApplyLoan /></DashboardLayout>} />
       <Route path="/profile" element={<DashboardLayout title="My Profile"><UserProfile /></DashboardLayout>} />
+      <Route path="/activity" element={<DashboardLayout title="My Activity"><MyActivity /></DashboardLayout>} />
     </Routes>
   );
 }

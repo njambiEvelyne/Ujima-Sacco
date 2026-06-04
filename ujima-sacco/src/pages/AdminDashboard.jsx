@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
-import { getLoans, getUsers, updateLoanStatus, saveUsers, formatKES } from '../data/store';
+import { getLoans, getUsers, updateLoanStatus, toggleMemberStatus, getActivities, formatKES } from '../data/store';
+import { useAuth } from '../context/AuthContext';
 
 /* ── Overview ─────────────────────────────────────────────────────── */
 function AdminOverview() {
@@ -290,6 +291,7 @@ function LoanApplications() {
 
 /* ── Members ─────────────────────────────────────────────────────── */
 function Members() {
+  const { user: adminUser } = useAuth();
   const [members, setMembers] = useState(() => getUsers().filter(u => u.role === 'member'));
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
@@ -305,14 +307,10 @@ function Members() {
   });
 
   const toggleStatus = (memberId) => {
-    const allUsers = getUsers();
-    const idx = allUsers.findIndex(u => u.id === memberId);
-    if (idx === -1) return;
-    allUsers[idx].status = allUsers[idx].status === 'active' ? 'suspended' : 'active';
-    saveUsers(allUsers);
-    const updated = allUsers.filter(u => u.role === 'member');
-    setMembers(updated);
-    if (selected?.id === memberId) setSelected(allUsers[idx]);
+    const updated = toggleMemberStatus(memberId, adminUser);
+    if (!updated) return;
+    setMembers(getUsers().filter(u => u.role === 'member'));
+    if (selected?.id === memberId) setSelected(updated);
   };
 
   const memberLoans = selected ? getLoans().filter(l => l.userId === selected.id) : [];
@@ -441,6 +439,111 @@ function Members() {
   );
 }
 
+/* ── Activity Log ─────────────────────────────────────────────────── */
+const activityMeta = {
+  login:         { icon: '🔐', color: '#dbeafe', label: 'Signed In' },
+  logout:        { icon: '🚪', color: '#f1f5f9', label: 'Signed Out' },
+  register:      { icon: '🌱', color: '#dcfce7', label: 'Registered' },
+  loan_apply:    { icon: '📝', color: '#fef3c7', label: 'Loan Applied' },
+  loan_approved: { icon: '✅', color: '#dcfce7', label: 'Loan Approved' },
+  loan_rejected: { icon: '❌', color: '#fee2e2', label: 'Loan Rejected' },
+  suspend:       { icon: '🚫', color: '#fee2e2', label: 'Suspended' },
+  activate:      { icon: '✅', color: '#dcfce7', label: 'Activated' },
+};
+
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function ActivityLog() {
+  const [activities, setActivities] = useState(getActivities);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const types = ['all', 'login', 'logout', 'register', 'loan_apply', 'loan_approved', 'loan_rejected', 'suspend', 'activate'];
+
+  const filtered = activities
+    .filter(a => typeFilter === 'all' || a.type === typeFilter)
+    .filter(a => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return a.userName?.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q) || a.memberNumber?.toLowerCase().includes(q);
+    });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h2 style={{ fontWeight: 700 }}>Activity Log</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Full audit trail of all system events</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            className="form-input"
+            placeholder="🔍 Search..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: 200, padding: '0.45rem 0.75rem', fontSize: '0.875rem' }}
+          />
+          <button className="btn btn-outline btn-sm" onClick={() => setActivities(getActivities())}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {/* Type filter pills */}
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {types.map(t => (
+          <button
+            key={t}
+            onClick={() => setTypeFilter(t)}
+            className={`btn btn-sm ${typeFilter === t ? 'btn-primary' : 'btn-outline'}`}
+            style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+          >
+            {t === 'all' ? 'All' : (activityMeta[t]?.icon + ' ' + activityMeta[t]?.label)}
+          </button>
+        ))}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {filtered.length === 0 ? (
+          <div className="empty-state" style={{ padding: '3rem' }}>
+            <div className="icon">📋</div>
+            <h3>No activity found</h3>
+            <p>Events will appear here as members interact with the system</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {filtered.map((a, i) => {
+              const meta = activityMeta[a.type] || { icon: '📌', color: '#f1f5f9', label: a.type };
+              return (
+                <div key={a.id} style={{ display: 'flex', gap: '1rem', padding: '0.875rem 1.25rem', borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none', alignItems: 'flex-start' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
+                    {meta.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{a.description}</div>
+                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.2rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.memberNumber}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>·</span>
+                      <span style={{ fontSize: '0.75rem', background: meta.color, borderRadius: 20, padding: '0.1rem 0.5rem', fontWeight: 600 }}>{meta.label}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {timeAgo(a.timestamp)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Export ─────────────────────────────────────────────────── */
 export default function AdminDashboard() {
   return (
@@ -448,6 +551,7 @@ export default function AdminDashboard() {
       <Route path="/" element={<DashboardLayout title="Admin Overview"><AdminOverview /></DashboardLayout>} />
       <Route path="/loans" element={<DashboardLayout title="Loan Applications"><LoanApplications /></DashboardLayout>} />
       <Route path="/members" element={<DashboardLayout title="Members"><Members /></DashboardLayout>} />
+      <Route path="/activity" element={<DashboardLayout title="Activity Log"><ActivityLog /></DashboardLayout>} />
     </Routes>
   );
 }
