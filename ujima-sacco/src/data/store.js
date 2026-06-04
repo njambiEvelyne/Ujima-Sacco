@@ -3,6 +3,35 @@
 const USERS_KEY = 'ujima_users';
 const LOANS_KEY = 'ujima_loans';
 const SESSION_KEY = 'ujima_session';
+const ACTIVITY_KEY = 'ujima_activity';
+
+/* ── Activity Log ─────────────────────────────────────────────────── */
+export const getActivities = () => {
+  try { return JSON.parse(localStorage.getItem(ACTIVITY_KEY)) || []; }
+  catch { return []; }
+};
+
+const saveActivities = (logs) => localStorage.setItem(ACTIVITY_KEY, JSON.stringify(logs));
+
+export const addActivity = ({ userId, userName, memberNumber, role = 'member', type, description, meta = {} }) => {
+  const logs = getActivities();
+  logs.unshift({
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    userId,
+    userName,
+    memberNumber,
+    role,
+    type,        // 'login' | 'register' | 'loan_apply' | 'loan_approved' | 'loan_rejected' | 'suspend' | 'activate' | 'logout'
+    description,
+    meta,
+    timestamp: new Date().toISOString(),
+  });
+  // Keep last 500 entries to avoid bloating localStorage
+  saveActivities(logs.slice(0, 500));
+};
+
+export const getUserActivities = (userId) =>
+  getActivities().filter(a => a.userId === userId);
 
 // Seed default admin
 const seedAdmin = () => {
@@ -68,6 +97,10 @@ export const registerUser = (data) => {
   };
   users.push(user);
   saveUsers(users);
+  addActivity({
+    userId: user.id, userName: user.fullName, memberNumber,
+    role: 'member', type: 'register', description: `${user.fullName} joined as a new member`,
+  });
   return { success: true, user };
 };
 
@@ -78,6 +111,10 @@ export const loginUser = (email, password) => {
   if (!user) return { success: false, error: 'Invalid email or password.' };
   if (user.status === 'suspended') return { success: false, error: 'Account suspended. Contact admin.' };
   setSession(user);
+  addActivity({
+    userId: user.id, userName: user.fullName, memberNumber: user.memberNumber,
+    role: user.role, type: 'login', description: `${user.fullName} signed in`,
+  });
   return { success: true, user };
 };
 
@@ -110,6 +147,12 @@ export const applyLoan = (userId, data) => {
 
   loans.push(loan);
   saveLoans(loans);
+  addActivity({
+    userId, userName: user?.fullName, memberNumber: user?.memberNumber,
+    role: 'member', type: 'loan_apply',
+    description: `${user?.fullName} applied for a loan of ${formatKES(loan.amount)}`,
+    meta: { loanId: loan.id, amount: loan.amount, purpose: loan.purpose },
+  });
   return { success: true, loan };
 };
 
@@ -121,10 +164,35 @@ export const updateLoanStatus = (loanId, status, adminNote = '') => {
   loans[idx].adminNote = adminNote;
   loans[idx].reviewedAt = new Date().toISOString();
   saveLoans(loans);
-  return { success: true, loan: loans[idx] };
+  const loan = loans[idx];
+  addActivity({
+    userId: loan.userId, userName: loan.memberName, memberNumber: loan.memberNumber,
+    role: 'member',
+    type: status === 'approved' ? 'loan_approved' : 'loan_rejected',
+    description: `Loan of ${formatKES(loan.amount)} for ${loan.memberName} was ${status}`,
+    meta: { loanId, amount: loan.amount, adminNote },
+  });
+  return { success: true, loan };
 };
 
 export const getUserLoans = (userId) => getLoans().filter(l => l.userId === userId);
+
+export const toggleMemberStatus = (memberId, adminUser) => {
+  const users = getUsers();
+  const idx = users.findIndex(u => u.id === memberId);
+  if (idx === -1) return null;
+  users[idx].status = users[idx].status === 'active' ? 'suspended' : 'active';
+  saveUsers(users);
+  const member = users[idx];
+  addActivity({
+    userId: member.id, userName: member.fullName, memberNumber: member.memberNumber,
+    role: 'member',
+    type: member.status === 'suspended' ? 'suspend' : 'activate',
+    description: `${adminUser?.fullName || 'Admin'} ${member.status === 'suspended' ? 'suspended' : 'activated'} member ${member.fullName}`,
+    meta: { adminId: adminUser?.id },
+  });
+  return member;
+};
 
 const calculateMonthlyPayment = (principal, annualRate, months) => {
   const r = annualRate / 100 / 12;
